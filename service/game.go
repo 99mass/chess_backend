@@ -96,7 +96,7 @@ func (rm *RoomManager) CreateRoom(invitation InvitationMessage) *ChessGameRoom {
 		Moves:          []Move{},
 	}
 
-	timer := NewChessTimer(room, 1)
+	timer := NewChessTimer(room, 10)
 	room.Timer = timer
 	timer.Start()
 
