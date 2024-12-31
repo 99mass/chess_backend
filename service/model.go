@@ -2,15 +2,16 @@ package service
 
 import (
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 type UserProfile struct {
 	ID       string `json:"id"`
-	UserName string `json:"username"`               
+	UserName string `json:"username"`
 	IsOnline bool   `json:"isnOline"`
-	IsInRoom   bool   `json:"isInRoom"`
+	IsInRoom bool   `json:"isInRoom"`
 }
 
 type UserStore struct {
@@ -35,21 +36,36 @@ type OnlineUsersManager struct {
 	connections map[string]*SafeConn
 	userStore   *UserStore
 	roomManager *RoomManager
+	tempRoomManager    *TemporaryRoomManager
+	publicQueue *PublicGameQueue
+}
+
+type PublicGameQueue struct {
+	waitingPlayers map[string]*QueuedPlayer
+	mutex          sync.RWMutex
+}
+
+type QueuedPlayer struct {
+	UserID     string
+	Username   string
+	JoinedAt   time.Time
+	Timer      *time.Timer
+	Connection *SafeConn
 }
 
 type SafeConn struct {
-    conn  *websocket.Conn
-    mutex sync.Mutex
+	conn  *websocket.Conn
+	mutex sync.Mutex
 }
 
 func NewSafeConn(conn *websocket.Conn) *SafeConn {
-    return &SafeConn{conn: conn}
+	return &SafeConn{conn: conn}
 }
 
 func (sc *SafeConn) WriteJSON(v interface{}) error {
-    sc.mutex.Lock()
-    defer sc.mutex.Unlock()
-    return sc.conn.WriteJSON(v)
+	sc.mutex.Lock()
+	defer sc.mutex.Unlock()
+	return sc.conn.WriteJSON(v)
 }
 
 type OnlineUser struct {

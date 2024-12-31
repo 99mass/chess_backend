@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// New type for Chess Game Room
 type ChessGameRoom struct {
 	RoomID      string     `json:"room_id"`
 	WhitePlayer OnlineUser `json:"white_player"`
@@ -18,7 +17,7 @@ type ChessGameRoom struct {
 	GameState   map[string]interface{} `json:"game_state,omitempty"`
 	Status      RoomStatus             `json:"status"`
 
-	// New fields added from Dart GameModel
+
 	GameCreatorUID string `json:"game_creator_uid"`
 	PositionFEN    string `json:"position_fen"`
 	WinnerID       string `json:"winner_id,omitempty"`
@@ -31,14 +30,12 @@ type ChessGameRoom struct {
 	InvitationTimeout *InvitationTimeout
 }
 
-// You'll need to define the Move struct as well
 type Move struct {
 	From  string `json:"from"`
 	To    string `json:"to"`
 	Piece string `json:"piece"`
 }
 
-// Room status types
 type RoomStatus string
 
 const (
@@ -47,26 +44,22 @@ const (
 	RoomStatusFinished RoomStatus = "finished"
 )
 
-// New type for Room Management
 type RoomManager struct {
 	rooms map[string]*ChessGameRoom
 	mutex sync.RWMutex
 }
 
-// Additional invitation message type
 const (
 	InvitationCancel InvitationMessageType = "invitation_cancel"
 	RoomLeave        InvitationMessageType = "room_leave"
 )
 
-// Method to create a new Room Manager
 func NewRoomManager() *RoomManager {
 	return &RoomManager{
 		rooms: make(map[string]*ChessGameRoom),
 	}
 }
 
-// Create a new Chess Game Room
 func (rm *RoomManager) CreateRoom(invitation InvitationMessage) *ChessGameRoom {
 	rm.mutex.Lock()
 	defer rm.mutex.Unlock()
@@ -96,7 +89,7 @@ func (rm *RoomManager) CreateRoom(invitation InvitationMessage) *ChessGameRoom {
 		Moves:          []Move{},
 	}
 
-	timer := NewChessTimer(room, 10)
+	timer := NewChessTimer(room, 1)
 	room.Timer = timer
 	timer.Start()
 
@@ -104,7 +97,7 @@ func (rm *RoomManager) CreateRoom(invitation InvitationMessage) *ChessGameRoom {
 	return room
 }
 
-// Get a room by its ID
+
 func (rm *RoomManager) GetRoom(roomID string) (*ChessGameRoom, bool) {
 	rm.mutex.RLock()
 	defer rm.mutex.RUnlock()
@@ -113,14 +106,14 @@ func (rm *RoomManager) GetRoom(roomID string) (*ChessGameRoom, bool) {
 	return room, exists
 }
 
-// Remove a room
+
 func (rm *RoomManager) RemoveRoom(roomID string) {
 	rm.mutex.Lock()
 	defer rm.mutex.Unlock()
 
-	// Récupérer la room avant de la supprimer
+	
 	if room, exists := rm.rooms[roomID]; exists {
-		// Arrêter le timer si il existe
+		
 		if room.Timer != nil {
 			room.Timer.Stop()
 		}
@@ -128,15 +121,12 @@ func (rm *RoomManager) RemoveRoom(roomID string) {
 	}
 }
 
-// Add a connection to a room
-
 func (room *ChessGameRoom) AddConnection(username string, conn *SafeConn) {
 	room.mutex.Lock()
 	defer room.mutex.Unlock()
 	room.Connections[username] = conn
 }
 
-// GetOtherPlayer retourne le joueur opposé à username dans la room.
 func (room *ChessGameRoom) GetOtherPlayer(username string) (string, bool) {
 	if room.WhitePlayer.Username == username {
 		return room.BlackPlayer.Username, true
