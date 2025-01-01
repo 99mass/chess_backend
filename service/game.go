@@ -28,6 +28,7 @@ type ChessGameRoom struct {
 	Moves          []Move `json:"moves"`
 	Timer          *ChessTimer
 	InvitationTimeout *InvitationTimeout
+	onlineManager *OnlineUsersManager
 }
 
 type Move struct {
@@ -47,6 +48,7 @@ const (
 type RoomManager struct {
 	rooms map[string]*ChessGameRoom
 	mutex sync.RWMutex
+	onlineManager *OnlineUsersManager
 }
 
 const (
@@ -54,9 +56,10 @@ const (
 	RoomLeave        InvitationMessageType = "room_leave"
 )
 
-func NewRoomManager() *RoomManager {
+func NewRoomManager(onlineManager *OnlineUsersManager) *RoomManager {
 	return &RoomManager{
 		rooms: make(map[string]*ChessGameRoom),
+		onlineManager: onlineManager,
 	}
 }
 
@@ -87,6 +90,7 @@ func (rm *RoomManager) CreateRoom(invitation InvitationMessage) *ChessGameRoom {
 		IsWhitesTurn:   true,
 		IsGameOver:     false,
 		Moves:          []Move{},
+		onlineManager:  rm.onlineManager,
 	}
 
 	timer := NewChessTimer(room, 10)

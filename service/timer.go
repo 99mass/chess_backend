@@ -104,6 +104,18 @@ func (ct *ChessTimer) handleTimeOut(winner string) {
 	} else {
 		ct.room.WinnerID = ct.room.BlackPlayer.ID
 	}
+
+	if ct.room != nil {
+		ct.room.mutex.RLock()
+		whiteUsername := ct.room.WhitePlayer.Username
+		blackUsername := ct.room.BlackPlayer.Username
+		ct.room.mutex.RUnlock()
+
+		// Nettoyer les deux joueurs
+		ct.room.onlineManager.cleanupPlayerFromPublicQueue(whiteUsername)
+		ct.room.onlineManager.cleanupPlayerFromPublicQueue(blackUsername)
+	}
+	
 	ct.room.mutex.Unlock()
 
 	// S'assurer que le message de fin est envoyé avec une petite pause

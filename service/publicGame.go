@@ -25,10 +25,10 @@ func (m *OnlineUsersManager) handlePublicGameRequest(username string, userID str
 	}
 
 	m.publicQueue.mutex.Lock()
-	defer m.publicQueue.mutex.Unlock()
 
 	// Vérifier si le joueur est déjà dans la file d'attente
 	if _, exists := m.publicQueue.waitingPlayers[username]; exists {
+		m.publicQueue.mutex.Unlock()
 		return
 	}
 
@@ -55,6 +55,9 @@ func (m *OnlineUsersManager) handlePublicGameRequest(username string, userID str
 		}
 
 		m.publicQueue.waitingPlayers[username] = queuedPlayer
+		m.publicQueue.mutex.Unlock()
+
+		m.broadcastOnlineUsers()
 
 		// Gérer le timeout
 		go func() {
@@ -66,6 +69,7 @@ func (m *OnlineUsersManager) handlePublicGameRequest(username string, userID str
 		// Adversaire trouvé, créer la partie
 		delete(m.publicQueue.waitingPlayers, opponent.Username)
 		opponent.Timer.Stop()
+		m.publicQueue.mutex.Unlock()
 
 		// Créer une invitation pour la partie
 		invitation := InvitationMessage{
@@ -137,8 +141,6 @@ func (m *OnlineUsersManager) handlePublicGameRequest(username string, userID str
 // Fonction pour gérer le départ de la file d'attente
 func (m *OnlineUsersManager) handlePublicQueueLeave(username string) {
 	m.publicQueue.mutex.Lock()
-	defer m.publicQueue.mutex.Unlock()
-
 	// Vérifier si le joueur est dans la file d'attente
 	player, exists := m.publicQueue.waitingPlayers[username]
 	if !exists {
@@ -152,6 +154,10 @@ func (m *OnlineUsersManager) handlePublicQueueLeave(username string) {
 
 	// Supprimer le joueur de la file d'attente
 	delete(m.publicQueue.waitingPlayers, username)
+	m.publicQueue.mutex.Unlock()
+
+	// Mettre à jour la liste des utilisateurs en ligne
+	m.broadcastOnlineUsers()
 
 	// Notifier le joueur qu'il a quitté la file d'attente
 	if player.Connection != nil {
@@ -167,7 +173,6 @@ func (m *OnlineUsersManager) handlePublicQueueLeave(username string) {
 // Gérer le timeout d'une requête de partie publique
 func (m *OnlineUsersManager) handlePublicGameTimeout(username string) {
 	m.publicQueue.mutex.Lock()
-	defer m.publicQueue.mutex.Unlock()
 
 	player, exists := m.publicQueue.waitingPlayers[username]
 	if !exists {
@@ -177,6 +182,10 @@ func (m *OnlineUsersManager) handlePublicGameTimeout(username string) {
 	// Supprimer le joueur de la file d'attente
 	delete(m.publicQueue.waitingPlayers, username)
 
+	m.publicQueue.mutex.Unlock()
+	// Broadcast la mise à jour des utilisateurs en ligne
+	m.broadcastOnlineUsers()
+
 	// Notifier le joueur du timeout
 	player.Connection.WriteJSON(WebSocketMessage{
 		Type: PublicGameTimeout,
@@ -184,4 +193,16 @@ func (m *OnlineUsersManager) handlePublicGameTimeout(username string) {
 			"message": "Aucun adversaire trouvé. Veuillez réessayer.",
 		})),
 	})
+}
+
+func (m *OnlineUsersManager) cleanupPlayerFromPublicQueue(username string) {
+	m.publicQueue.mutex.Lock()
+	defer m.publicQueue.mutex.Unlock()
+
+	if player, exists := m.publicQueue.waitingPlayers[username]; exists {
+		if player.Timer != nil {
+			player.Timer.Stop()
+		}
+		delete(m.publicQueue.waitingPlayers, username)
+	}
 }

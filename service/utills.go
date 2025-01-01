@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -25,4 +26,8 @@ func GenerateUniqueID() string {
 	return hex.EncodeToString(b)
 }
 
-
+// Utilitaire pour convertir en JSON
+func mustJson(v interface{}) []byte {
+	data, _ := json.Marshal(v)
+	return data
+}

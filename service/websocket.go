@@ -17,17 +17,18 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Créer un nouveau gestionnaire de connexions
 func NewOnlineUsersManager(userStore *UserStore) *OnlineUsersManager {
-	return &OnlineUsersManager{
-		connections:     make(map[string]*SafeConn),
-		userStore:       userStore,
-		roomManager:     NewRoomManager(),
-		tempRoomManager: NewTemporaryRoomManager(),
+	manager := &OnlineUsersManager{
+		connections: make(map[string]*SafeConn),
+		userStore:   userStore,
 		publicQueue: &PublicGameQueue{
 			waitingPlayers: make(map[string]*QueuedPlayer),
 		},
 	}
+	// Créer le RoomManager avec une référence à l'OnlineUsersManager
+	manager.roomManager = NewRoomManager(manager)
+	manager.tempRoomManager = NewTemporaryRoomManager()
+	return manager
 }
 
 // Gérer la connexion WebSocket
@@ -150,6 +151,8 @@ func (m *OnlineUsersManager) handleClientConnection(username string, conn *webso
 				continue
 			}
 
+			m.cleanupPlayerFromPublicQueue(username)
+
 			_, err := m.RemoveUserFromRoom(leaveRequest.Username)
 			if err != nil {
 				log.Printf("Error removing user from room: %v", err)
@@ -215,6 +218,8 @@ func (m *OnlineUsersManager) handleClientConnection(username string, conn *webso
 				log.Printf("Error parsing Partie Terminée data: %v", err)
 				continue
 			}
+
+			m.cleanupPlayerFromPublicQueue(username)
 
 			// Récupérer la room
 			room, exists := m.roomManager.GetRoom(gameOverData.GameID)
@@ -391,7 +396,7 @@ func (m *OnlineUsersManager) handleInvitation(invitation InvitationMessage) erro
 		m.tempRoomManager.RemoveTempRoom(invitation.RoomID)
 
 		fromConn, fromExists := m.connections[invitation.ToUsername]
-		
+
 		if fromExists {
 			err := fromConn.WriteJSON(WebSocketMessage{
 				Type:    "invitation_rejected",
@@ -517,6 +522,7 @@ func (m *OnlineUsersManager) notifyRoomClosure(invitation InvitationMessage) {
 }
 
 func (m *OnlineUsersManager) broadcastOnlineUsers() {
+	// Obtenir les connexions actives
 	m.mutex.RLock()
 	connections := make(map[string]*SafeConn)
 	for username, conn := range m.connections {
@@ -524,25 +530,8 @@ func (m *OnlineUsersManager) broadcastOnlineUsers() {
 	}
 	m.mutex.RUnlock()
 
-	// Get active rooms with proper locking
-	activeRooms := m.roomManager.GetActiveRooms()
-	usersInRooms := make(map[string]bool)
-	for _, room := range activeRooms {
-		usersInRooms[room.WhitePlayer.Username] = true
-		usersInRooms[room.BlackPlayer.Username] = true
-	}
-
-	onlineUsers := make([]OnlineUser, 0)
-	for username := range connections {
-		user, err := m.userStore.GetUser(username)
-		if err == nil && !usersInRooms[username] {
-			onlineUsers = append(onlineUsers, OnlineUser{
-				ID:       user.ID,
-				Username: user.UserName,
-				IsInRoom: false,
-			})
-		}
-	}
+	// Obtenir la liste filtrée des utilisateurs en ligne
+	onlineUsers := m.getCurrentOnlineUsers()
 
 	message := WebSocketMessage{
 		Type:    "online_users",
@@ -564,29 +553,37 @@ func (m *OnlineUsersManager) getCurrentOnlineUsers() []OnlineUser {
 	}
 	m.mutex.RUnlock()
 
-	activeRooms := m.roomManager.GetActiveRooms()
+	// Obtenir les utilisateurs dans des rooms
 	usersInRooms := make(map[string]bool)
-	for _, room := range activeRooms {
+	m.roomManager.mutex.RLock()
+	for _, room := range m.roomManager.rooms {
 		usersInRooms[room.WhitePlayer.Username] = true
 		usersInRooms[room.BlackPlayer.Username] = true
 	}
+	m.roomManager.mutex.RUnlock()
 
+	// Obtenir les utilisateurs dans la file d'attente publique
+	m.publicQueue.mutex.RLock()
+	usersInPublicQueue := make(map[string]bool)
+	for username := range m.publicQueue.waitingPlayers {
+		usersInPublicQueue[username] = true
+	}
+	m.publicQueue.mutex.RUnlock()
+
+	// Ne garder que les utilisateurs qui ne sont ni dans des rooms ni dans la file d'attente
 	onlineUsers := make([]OnlineUser, 0)
 	for username := range connections {
-		user, err := m.userStore.GetUser(username)
-		if err == nil && !usersInRooms[username] {
-			onlineUsers = append(onlineUsers, OnlineUser{
-				ID:       user.ID,
-				Username: user.UserName,
-				IsInRoom: false,
-			})
+		// Vérifier si l'utilisateur n'est ni dans une room ni dans la file d'attente
+		if !usersInRooms[username] && !usersInPublicQueue[username] {
+			user, err := m.userStore.GetUser(username)
+			if err == nil {
+				onlineUsers = append(onlineUsers, OnlineUser{
+					ID:       user.ID,
+					Username: user.UserName,
+					IsInRoom: false,
+				})
+			}
 		}
 	}
 	return onlineUsers
-}
-
-// Utilitaire pour convertir en JSON sans erreur
-func mustJson(v interface{}) []byte {
-	data, _ := json.Marshal(v)
-	return data
 }
